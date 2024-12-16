@@ -23,6 +23,11 @@ class CurrentValueRelayTests: XCTestCase {
         values = []
     }
 
+    override func tearDown() {
+        self.relay = nil
+        super.tearDown()
+    }
+    
     func testValueGetter() {
         XCTAssertEqual(relay?.value, "initial")
         relay?.accept("second")
@@ -323,6 +328,59 @@ class CurrentValueRelayTests: XCTestCase {
         XCTAssertTrue(StoredObject.storedObjectReleased)
         XCTAssertTrue(StoredObject2.storedObjectReleased)
         XCTAssertNil(container)
+    }
+    
+    func testSinkDeallocateWhenUpstreamReceiveComplete() {
+        let subject = PassthroughSubject<Int, Never>()
+        
+        final class ContainerClass {
+            // Cancellables comes before the relay. In this case, the objects
+            // for both relays leak.
+            var cancellables: Set<AnyCancellable>? = Set<AnyCancellable>()
+            let relay = CurrentValueRelay(Int(0))
+        }
+        
+        final class DeallocateChecker: Subscriber {
+            
+            static var deallocate = false
+            
+            static var receivedCompletion = false
+            
+            public typealias Input = Int
+            
+            public typealias Failure = Never
+            
+            public func receive(_ input: Input) -> Subscribers.Demand {
+                return .unlimited
+            }
+            
+            public func receive(subscription: Subscription) {
+                subscription.request(.unlimited)
+            }
+            
+            func receive(completion: Subscribers.Completion<Never>) {
+                Self.receivedCompletion = true
+            }
+            
+            deinit {
+                Self.deallocate = true
+                print("[Sink] DeallocateChecker deinit")
+            }
+        }
+        
+        var container: ContainerClass? = ContainerClass()
+        
+        container?.relay
+            .sink(receiveValue: { _ in })
+            .store(in: &subscriptions)
+                
+        container!.relay.subscribe(subject).store(in: &subscriptions)
+        container!.relay.subscribe(DeallocateChecker())
+        
+        subject.send(completion: .finished)
+        container = nil
+        XCTAssertTrue(DeallocateChecker.receivedCompletion, "DeallocateChecker has not received completion.")
+        XCTAssertTrue(DeallocateChecker.deallocate, "DeallocateChecker is not deallocate.")
     }
 }
 #endif
