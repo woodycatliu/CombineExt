@@ -48,11 +48,6 @@ class Sink<Upstream: Publisher, Downstream: Subscriber>: Subscriber {
         // when a sink receives completion, and when a custom operator like `withLatestFrom`
         // calls `cancelUpstream()` manually.
         upstream
-            .handleEvents(
-                receiveCancel: { [weak self] in
-                    self?.upstreamIsCancelled = true
-                }
-            )
             .subscribe(self)
     }
 
@@ -106,8 +101,9 @@ class Sink<Upstream: Publisher, Downstream: Subscriber>: Subscriber {
 
     func cancelUpstream() {
         guard upstreamIsCancelled == false else { return }
-        
+        upstreamIsCancelled = true
         upstreamSubscription.kill()
+        print("Sink is deinit")
     }
 
     deinit { cancelUpstream() }
